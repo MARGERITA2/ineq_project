@@ -1,0 +1,213 @@
+install.packages("ggplot2")
+install.packages("dplyr")
+install.packages("survey")
+install.packages("convey")
+install.packages("Hmisc")
+install.packages("xtable")
+install.packages("stargazer")
+
+library(ggplot2)
+library(dplyr)
+library(survey)
+library(convey)
+library(Hmisc)
+library(xtable)
+library(stargazer)
+
+################ Prepare the data to work with ###############
+
+# Setup Data Italy - Regional Wage Gap
+# prepatre data frame and generate income variables 
+# time frame: 2017
+
+#-------------------------------------------------------------------------------
+# Personal Data:
+silc.p17<- tbl(pg, 'c17p') %>% filter(pb020=='IT') %>%
+select(pb030, pb040,pb210, pb220a, pe040, ph010, pl040, pl060, pl100, pl073, pl074,pl075,pl076,pl111,pl150,pl160,pl200, pl160, py010g) %>% 
+collect(n = Inf)
+
+# Personal Register
+silc.r17<- tbl(pg, 'c17r') %>% filter(rb020=='IT')%>%   
+  select(rb010,rb020,rb030,rb050,rb080,rb090,rx030)%>%
+  collect(n=Inf)  
+
+# Household Register
+silc.d17<- tbl(pg, 'c17d') %>% filter(db020=='IT') %>% 
+  select(db010,db020,db030,db040,db090,db100)%>% 
+  collect(n=Inf)
+
+# Household Data
+silc.h17<- tbl(pg, 'c17h') %>% 
+  filter(hb020=='IT') %>% 
+  select(hb010,hb020,hb030)%>% 
+  collect(n=Inf) 
+
+
+# Renaming Variables
+silc.p_rwg <- silc.p17 %>% rename(personal_id = pb030)
+silc.r_rwg <- silc.r17 %>% rename(personal_id = rb030)
+
+# Create unique IDs
+silc.h_rwg <- silc.h17 %>% mutate(id_h = paste0(hb020, hb030))
+silc.d_rwg <- silc.d17 %>% mutate(id_h = paste0(db020, db030))
+
+# merge silc.p_rwg and silc.r_rwg
+silc.rp_rwg <- left_join(silc.p_rwg, silc.r_rwg)
+
+# merge silc.d_rwg and silc.h_rwg
+silc.dh_rwg <- left_join(silc.d_rwg, silc.h_rwg)
+
+# Create age, household ID, gender variables
+silc.rp_rwg <- silc.rp_rwg %>% 
+  mutate(age = rb010 - rb080,
+         gender = factor(rb090, labels = c('Male','Female')),
+         id_h = paste0(rb020, rx030))
+
+# Merge silc.rp and silc.dh
+silc.rphd_rwg <- left_join(silc.rp_rwg, silc.dh_rwg)
+
+
+# Replace NA's in silc.rphd_rwg by 0
+silc.rphd_rwg[is.na(silc.rphd_rwg)] <- 0
+
+
+# Subsetting ------------------------------------------------------------------
+
+# To get useful results we subset to income >= 0
+silc_rwg <- silc.rphd_rwg %>% filter(py010g > 0)
+
+
+# Recoding & Renaming Variables -----------------------------------------------
+
+# job_experience
+silc_rwg <- silc_rwg %>% rename(job_experience = pl200)
+
+# filter only observations with income and working time 
+silc_rwg <- silc_rwg %>% filter(pl060>0 & (pl073+pl074+pl075+pl076)>0 & pl040 == 3)
+
+# Note: 13833 observations
+
+# calculate hourly wage
+silc_rwg <- silc_rwg %>% mutate(hwages = py010g / 
+                          ((pl060 + pl100)*52/12*pmin(12,(pl073 + pl074 + pl075 + pl076))))
+
+# Recode Education Variable
+silc_rwg$education <- as.factor(silc_rwg$pe040)
+levels(silc_rwg$edu) <- c("1","1","2","3","3","3","3","4")
+
+# Managerial Position Dummy
+# 0 wenn keine leitende Position, 1 wenn in einer leitenden Position
+silc_rwg$pl150[silc_rwg$pl150 == 2] <- 0
+silc_rwg$pl150 <- as.numeric(silc_rwg$pl150)
+silc_rwg <- silc_rwg %>% rename(position = pl150)
+# 1: ja leitende Funktion, 0: keine leitende Funktion
+
+# Region
+# How many observations are in each region of Italy
+table <- as.data.frame(table(silc_rwg$db040))
+# ITC: 3534, ITF: 2148, ITG: 882, ITH: 3796, ITI: 3473
+
+# We treat ITC,ITH and ITI as "Norden" (<- 0) and
+# ITF and ITG as "Mezzogiorno" (<- 1)
+
+silc_rwg$db040[silc_rwg$db040 == "ITC"] <- 0
+silc_rwg$db040[silc_rwg$db040 == "ITH"] <- 0
+silc_rwg$db040[silc_rwg$db040 == "ITI"] <- 0
+silc_rwg$db040[silc_rwg$db040 == "ITF"] <- 1
+silc_rwg$db040[silc_rwg$db040 == "ITG"] <- 1
+
+silc_rwg <- na.omit(silc_rwg)
+
+silc_rwg <- silc_rwg %>% rename(region = db040)
+
+# Degree of urbanisation 
+silc_rwg$db100 <-factor(silc_rwg$db100, levels=c("1","2","3"))
+silc_rwg <- silc_rwg %>% rename(urbanisation = db100)
+
+# Health Dummy
+silc_rwg$ph010[silc_rwg$ph010 == 1] <- 0
+silc_rwg$ph010[silc_rwg$ph010 == 2] <- 0
+silc_rwg$ph010[silc_rwg$ph010 == 3] <- 0
+silc_rwg$ph010[silc_rwg$ph010 == 4] <- 1
+silc_rwg$ph010[silc_rwg$ph010 == 5] <- 1
+silc_rwg <- silc_rwg %>% rename(health = ph010)
+# 0 = good health, 1 = bad health
+
+# Recent job change Dummy
+silc_rwg$pl160[silc_rwg$pl160 == 2] <- 0
+silc_rwg$pl160 <- as.factor(silc_rwg$pl160)
+silc_rwg <- silc_rwg %>% rename(jobchange = pl160)
+# job change: 1, no job change: 0
+
+# Weights
+silc_rwg<- silc_rwg %>% rename(weights = pb040)
+
+# Income
+silc_rwg <- silc_rwg %>% rename(income = py010g)
+
+
+# Data frame only with the needed variables --------------------------------------
+
+data_rwg <- silc_rwg %>% select(id_h, personal_id, region, education, job_experience, age, 
+                        gender, hwages, position, weights, urbanisation, health, 
+                        jobchange, income)
+
+
+# Generate Subsets for "Norden" and "Mezzogiorno"
+
+Norden<- data_rwg %>% filter(region == 0) 
+Mezzogiorno <- data_rwg %>% filter(region == 1)
+
+# Descriptive Statistics ------------------------------------------------------
+
+# Income Density Plots
+income_limited <- data_rwg %>% filter(income <= 200000) # to make scales comparable
+income_density <- ggplot(income_limited) + geom_density(aes(x=income, color=region)) +
+labs(x = "Brutto-Jahreseinkommen Italien", y = "Dichte", title = "") + scale_fill_manual(name= "Regionen",labels=c("Norden","Mezzogiorno"))
+
+# Weiß leider noch nicht, wie ich bei Region die Werte in der Legende ändern kann!
+
+
+# Basic Analysis of Income Data ------------------------------------------
+data.svy.norden <- svydesign(ids =  ~ id_h,
+                         weights = ~ weights,
+                         data = Norden) %>% convey_prep()
+
+data.svy.mezzogiorno <- svydesign(ids =  ~ id_h,
+                         weights = ~ weights,
+                         data = Mezzogiorno) %>% convey_prep()
+
+# Mean and Median -------------------------------------------------------------
+
+# Mean
+mean_norden <- svymean(~hwages, data.svy.norden)
+mean_mezzogiorno <- svymean(~hwages, data.svy.mezzogiorno)
+mean_gap <- (mean_norden-mean_mezzogiorno)/mean_norden 
+
+# 0.15694 --> 15,69% hwage difference between 'Norden' and 'Mezzogiorno'
+
+# Median
+median_norden <- svyquantile(~hwages, data.svy.norden, quantile=c(0.5))
+median_mezzogiorno <- svyquantile(~hwages, data.svy.mezzogiorno, quantile=c(0.5))
+median_gap <- (median_norden-median_mezzogiorno)/median_norden
+
+# creating a data frame with values for means and medians
+mm_values <- data.frame(names=c("Durchschnitt Norden", "Durchschnitt Mezzogiorno", 
+                         "Median Norden", "Median Mezzogiorno"),
+                 values=c(mean_norden, mean_mezzogiorno, median_norden, median_mezzogiorno))
+mm_values
+
+# check variable classes in order for ggplot to work properly
+class(mm_values$names) # factor
+class(mm_values$values) # numeric
+
+# Basic barplot
+p <- ggplot(data=mm_values, aes(x=factor(names,levels=names) , y=values, fill=names)) +
+  geom_bar(position="dodge",stat="identity") + labs(x="", y="Stundenlohn", 
+  title="") + 
+  scale_fill_manual(values=alpha(c("darkorange","greenblue", "darkorange", "greenblue"), .5)) + 
+  guides(fill="none")
+p
+
+
+#####################  Ende ###########################################
