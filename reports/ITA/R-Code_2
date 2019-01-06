@@ -1,0 +1,296 @@
+####################################### Follow up to the first coding Part #################################################
+
+# Merging hd and rp to include the db040 (=Region) Variable 
+
+silc.rp <- left_join(silc.r, silc.p) # RP-Datensatz
+
+silc.hd <- left_join(silc.h, silc.d) # HD-Datensatz
+
+silc.hprd <-  left_join(silc.rp, silc.hd, by = c("id_h", "rb010" = "hb010", 
+                                                 "rb020" = "hb020", 
+                                                 "rx030" = "hb030"))
+
+# Setting 0 <- NA 
+
+silc.hprd[is.na(silc.hprd)] <- 0
+
+# Since some NA's cannot be replaced:
+silc.hprd <- na.omit(silc.hprd)
+
+##########################################################
+# Calculation Part - Grundgesamtheiten including D-File
+##########################################################
+
+##################################################################################
+# P1 (Eurostat): Gesamte Bevölkerung & equal sharing of resources within household
+##################################################################################
+# (1) Summe Einkommen aus Arbeit
+silc.hprd <- silc.hprd %>% mutate(inc_p=py010g+py021g+py050g+py080g)
+
+# (2) Summe Haushaltseinkommen
+silc.hprd <- silc.hprd %>% mutate(inc_h=hy040g+hy090g+hy110g)
+
+silc.hprd <- silc.hprd %>% group_by(id_h)%>%mutate(sum_inc_p=sum(inc_p))
+
+# (1)+(2)= Pre-tax factor income
+silc.hprd <- silc.hprd %>% mutate(p1_income =(sum_inc_p+inc_h)/hx050)
+
+#(3) Summe aus Pensionen + Arbeitslosengeld
+silc.hprd <- silc.hprd %>% mutate(othInc1=py090g+py100g)
+silc.hprd <- silc.hprd %>% group_by(id_h)%>%mutate(sum_othInc1=sum(othInc1))
+
+# (1)+(2)+(3)= Pre-tax national income                  
+silc.hprd <- silc.hprd %>% mutate(p11_income =p1_income+(sum_othInc1)/hx050)
+
+# (4) Summe aus anderen Transfers                       
+silc.hprd <- silc.hprd %>% mutate(othInc2_p=py110g+py120g+py130g+py140g)
+silc.hprd <- silc.hprd %>% mutate(othInc2_h=hy050g+hy060g+hy070g+hy080g)
+
+silc.hprd <- silc.hprd %>% group_by(id_h)%>%mutate(sum_othInc2=sum(othInc2_p))
+
+# (5) Summe Taxes
+silc.hprd <- silc.hprd %>% mutate(Taxes=hy120g+hy130g+hy140g)
+
+# (1)+(2)+(3)+(4)-(5)= Post-tax disposable income (hy020)
+silc.hprd <- silc.hprd %>% mutate(p12_income=p11_income+(othInc2_p+othInc2_h-Taxes)/hx050)
+
+# Kontrolle ob hy020 = p12_income
+
+silc.hprd <- silc.hprd %>% mutate(hy020_con=hy020/hx050)
+
+summary(silc.hprd$hy020_con==silc.hprd$p12_income)
+
+
+#####################################################################
+# P2 (wid.world)= Nur Personen >= 20 Jahre & partial sharing of resources
+######################################################################
+
+# Generating variable 'n': Filtering (age >= 20)
+silc.hprd<- silc.hprd %>% filter(rx010>=20)%>% add_count(id_h)
+
+# Pre-tax factor income 
+silc.hprd <- silc.hprd%>% mutate(p2_income=inc_p+(inc_h)/n)
+
+# Pre-tax national income 
+silc.hprd<- silc.hprd%>% mutate(p21_income=p2_income+othInc1)
+
+# Post-tax disposable income
+silc.hprd<- silc.hprd %>% mutate(p22_income=p21_income+othInc2_p+(othInc2_h-Taxes)/n)
+
+###########################################################################
+# Subsetting [0 >= income] in order to get useful results
+###########################################################################
+
+silc.hprd.p1<-silc.hprd%>% filter(p1_income > 0,p11_income > 0, p12_income > 0)
+
+silc.hprd.p2<- silc.hprd%>% filter(p2_income > 0,p21_income > 0, p22_income > 0,rx010>=20)
+
+###########################################################################
+# Creating Survey Objects (including D-File)
+###########################################################################
+
+P1_svy = svydesign(ids = ~id_h,
+                     strata = ~db040,                   
+                     weights = ~rb050,
+                     data = silc.hprd.p1) %>% convey_prep()
+
+P2_svy = svydesign(ids = ~id_h,
+                     strata= ~db040,
+                     weights = ~rb050,
+                     data = silc.hprd.p2) %>% convey_prep()
+
+######################################################################
+# 1. Calculation of the Indicators : P1 (Eurostat) 
+######################################################################
+
+# 1.1 Pre-tax factor income -----------------------------------------
+
+# Mittelwert 
+mean_pTfInc1 <- svyby(~p1_income,~rb010,P1_svy,svymean)
+
+# Median 
+median_pTfInc1<- svyby(~p1_income,~rb010,P1_svy,svyquantile,c(0.5),ci=TRUE)
+
+# Gini-Index  
+gini_pTfInc1 <- svyby(~p1_income,~rb010, P1_svy, svygini)
+
+# P80/P20   
+P80P20_pTfInc1 <-svyby(~p1_income,~rb010,P1_svy,svyqsr)
+
+# Top 10% Anteil  
+top_pTfInc1_1 <-subset(P1_svy, p1_income >= as.numeric(svyquantile(~p1_income,P1_svy, quantile=c(0.9))))
+
+topnum_pTfInc1 <- svyby(~p1_income,~rb010,top_pTfInc1_1,svytotal)# numerater
+
+topden_pTfInc1 <- svyby(~p1_income,~rb010,P1_svy,svytotal) # denumorterater
+
+top10_pTfInc1 <- topnum_pTfInc1/topden_pTfInc1
+
+
+# 1.2 Pre-tax national income --------------------------------------------
+
+# Mittelwert 
+mean_pTnInc1 <- svyby(~p11_income,~rb010,P1_svy,svymean)
+
+# Median 
+median_pTnInc1<- svyby(~p11_income,~rb010,P1_svy,svyquantile, quantile=c(0.5),ci=TRUE)
+
+# Gini-Index  
+gini_pTnInc1 <- svyby(~p11_income,~rb010, P1_svy, svygini)
+
+# P80/P20  
+P80P20_pTnInc1 <-svyby(~p11_income,~rb010,P1_svy,svyqsr)
+
+# Top 10% Anteil  
+top_pTnInc1_1 <-subset(P1_svy, p11_income >= as.numeric(svyquantile(~p11_income,P1_svy, quantile=c(0.9))))
+
+topnum_pTnInc1 <- svyby(~p11_income,~rb010,top_pTfInc1_1,svytotal)# numerater
+
+topden_pTnInc1 <- svyby(~p11_income,~rb010,P1_svy,svytotal) # denumorterater
+
+top10_pTnInc1 <- topnum_pTnInc1/topden_pTnInc1
+
+
+# 1.3 Post-tax disposable income -------------------------------------------
+
+# Mittelwert 
+mean_pTInc1 <- svyby(~p12_income,~rb010,P1_svy,svymean)
+
+# Median 
+median_pTInc1<- svyby(~p12_income,~rb010,P1_svy,svyquantile, quantile=c(0.5),ci=TRUE)
+
+# Gini-Index  
+gini_pTInc1 <- svyby(~p12_income,~rb010, P1_svy, svygini)
+
+# P80/P20   
+P80P20_pTInc1 <-svyby(~p12_income,~rb010,P1_svy,svyqsr)
+
+# Top 10% Anteil  
+top_pTInc1_1 <-subset(P1_svy, p12_income >= as.numeric(svyquantile(~p12_income,P1_svy, quantile=c(0.9))))
+
+topnum_pTInc1 <- svyby(~p12_income,~rb010,top_pTInc1_1,svytotal)# numerater
+
+topden_pTInc1 <- svyby(~p12_income,~rb010,P1_svy,svytotal) # denumorterater
+
+top10_pTInc1 <- topnum_pTInc1/topden_pTInc1
+
+# 1.4. Tables: P1 (Eurostat) results ##############################
+# Pre-tax factor income results
+table_P1_ptf_1 <- data.frame(mean_pTfInc1$rb010,mean_pTfInc1$p1_income,median_pTfInc1$p1_income, gini_pTfInc1$p1_income, P80P20_pTfInc1$p1_income,top10_pTfInc1$p1_income)
+
+colnames(table_P1_ptf_1)<-c("Jahr","Mittelwert", "Median", "Gini","P80/P20","Top 10% Anteil")
+
+table_P1_ptf_1
+
+# Pre-tax national income results                         
+table_P1_ptn_1 <- data.frame(mean_pTnInc1$rb010,mean_pTnInc1$p11_income,median_pTnInc1$p11_income, gini_pTnInc1$p11_income, P80P20_pTnInc1$p11_income,top10_pTnInc1$p11_income)
+
+colnames(table_P1_ptn_1)<-c("Jahr","Mittelwert", "Median", "Gini","P80/P20","Top 10% Anteil")   
+
+table_P1_ptn_1
+
+# Post disposable income results                         
+table_P1_ptI_1 <- data.frame(mean_pTInc1$rb010,mean_pTInc1$p12_income,median_pTInc1$p12_income, gini_pTInc1$p12_income, P80P20_pTInc1$p12_income,top10_pTInc1$p12_income)
+
+colnames(table_P1_ptI_1)<-c("Jahr","Mittelwert", "Median", "Gini","P80/P20","Top 10% Anteil")   
+
+table_P1_ptI_1
+
+#####################################################################
+# 2. Calculation of the Indicators : P2 (wid.world)
+
+# 2.1 Pre-tax factor income ###########################################
+
+# Mittelwert 
+mean_pTfInc2 <- svyby(~p2_income,~rb010,P2_svy,svymean)
+
+# Median 
+median_pTfInc2<- svyby(~p2_income,~rb010,P2_svy,svyquantile,c(0.5),ci=TRUE)
+
+# Gini-Index  
+gini_pTfInc2 <- svyby(~p2_income,~rb010, P2_svy, svygini)
+
+# P80/P20   
+P80P20_pTfInc2 <-svyby(~p2_income,~rb010,P2_svy,svyqsr)
+
+# Top 10% Anteil  
+top_pTfInc2_1 <-subset(P2_svy, p2_income >= as.numeric(svyquantile(~p2_income,P2_svy, quantile=c(0.9))))
+
+topnum_pTfInc2 <- svyby(~p2_income,~rb010,top_pTfInc2_1,svytotal)# numerater
+
+topden_pTfInc2 <- svyby(~p2_income,~rb010,P2_svy,svytotal) # denumorterater
+
+top10_pTfInc2 <- topnum_pTfInc2/topden_pTfInc2
+
+
+# 2.2 Pre-tax national income ###########################################
+
+# Mittelwert 
+mean_pTnInc2 <- svyby(~p21_income,~rb010,P2_svy,svymean)
+
+# Median 
+median_pTnInc2<- svyby(~p21_income,~rb010,P2_svy,svyquantile, quantile=c(0.5),ci=TRUE)
+
+# Gini-Index  
+gini_pTnInc2 <- svyby(~p21_income,~rb010, P2_svy, svygini)
+
+# P80/P20  
+P80P20_pTnInc2 <-svyby(~p21_income,~rb010,P2_svy,svyqsr)
+
+# Top 10% Anteil  
+top_pTnInc2_1 <-subset(P2_svy, p21_income >= as.numeric(svyquantile(~p21_income,P2_svy, quantile=c(0.9))))
+
+topnum_pTnInc2 <- svyby(~p21_income,~rb010,top_pTfInc2_1,svytotal)# numerater
+
+topden_pTnInc2 <- svyby(~p21_income,~rb010,P2_svy,svytotal) # denumorterater
+
+top10_pTnInc2 <- topnum_pTnInc2/topden_pTnInc2
+
+
+# 2.3 Post-tax disposable income ###########################################
+
+# Mittelwert 
+mean_pTInc2 <- svyby(~p22_income,~rb010,P2_svy,svymean)
+
+# Median 
+median_pTInc2<- svyby(~p22_income,~rb010,P2_svy,svyquantile, quantile=c(0.5),ci=TRUE)
+
+# Gini-Index  
+gini_pTInc2 <- svyby(~p22_income,~rb010, P2_svy, svygini)
+
+# P80/P20   
+P80P20_pTInc2 <-svyby(~p22_income,~rb010,P2_svy,svyqsr)
+
+# Top 10% Anteil  
+top_pTInc2_1 <-subset(P2_svy, p22_income >= as.numeric(svyquantile(~p22_income,P2_svy, quantile=c(0.9))))
+
+topnum_pTInc2 <- svyby(~p22_income,~rb010,top_pTInc2_1,svytotal)# numerater
+
+topden_pTInc2 <- svyby(~p22_income,~rb010,P2_svy,svytotal) # denumorterater
+
+top10_pTInc2 <- topnum_pTInc2/topden_pTInc2
+
+# 2.4. Tables: P1 (Eurostat) results ##############################
+# Pre-tax factor income results
+table_P2_ptf_1 <- data.frame(mean_pTfInc2$rb010,mean_pTfInc2$p2_income,median_pTfInc2$p2_income, gini_pTfInc2$p2_income, P80P20_pTfInc2$p2_income,top10_pTfInc2$p2_income)
+
+colnames(table_P2_ptf_1)<-c("Jahr","Mittelwert", "Median", "Gini","P80/P20","Top 10% Anteil")
+
+table_P1_ptf_1
+
+# Pre-tax national income results                         
+table_P2_ptn_1 <- data.frame(mean_pTnInc2$rb010,mean_pTnInc2$p21_income,median_pTnInc2$p21_income, gini_pTnInc2$p21_income, P80P20_pTnInc2$p21_income,top10_pTnInc2$p21_income)
+
+colnames(table_P2_ptn_1)<-c("Jahr","Mittelwert", "Median", "Gini","P80/P20","Top 10% Anteil")   
+
+table_P2_ptn_1
+
+# Post disposable income results                         
+table_P2_ptI_1 <- data.frame(mean_pTInc2$rb010,mean_pTInc2$p22_income,median_pTInc2$p22_income, gini_pTInc2$p22_income, P80P20_pTInc2$p22_income,top10_pTInc2$p22_income)
+
+colnames(table_P2_ptI_1)<-c("Jahr","Mittelwert", "Median", "Gini","P80/P20","Top 10% Anteil")   
+
+table_P2_ptI_1
+
+###################################### END ###################################################
+
