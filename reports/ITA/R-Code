@@ -1,1 +1,460 @@
 
+############################### Start first coding Part ###########################
+# 0 Packages
+
+library(dplyr)
+library(survey)
+library(convey)
+library(tidyverse)
+
+# Connection to data base
+
+country <- "IT"
+year <- seq(2004, 2013, 1) # keep that period. 2014-2017 is included seperately
+
+# 1 Fetch data from data base 
+
+# Important before running the code: Do not forget to connect to the SILC-Data base!!!!!!!
+
+######################################################################
+# 1.1 P-File (Personal Register)
+##########################################################################
+
+# Daten von 2004 - 2013
+silc.p_IT_b13 <- tbl(pg, "pp") %>%
+  filter(pb020 %in% country & pb010 %in% year) %>%
+  select(pb010, pb020, pb030, pb040, pb150, py010g, py050g, 
+         py050n,py080g, py090g, py100g, py110g, py120g, py130g, py140g
+         ,px010, px030,py020g) %>% 
+  collect(n = Inf)
+# 2014
+silc.p_IT_14<- tbl(pg, 'c14p')%>%
+  filter(pb020 %in% country) %>%
+  select(pb010, pb020, pb030, pb040, pb150, py010g, py021g, py050g, 
+         py050n,py080g, py090g, py100g, py110g, py120g, py130g, py140g
+         ,px010, px030) %>% 
+  collect(n = Inf)
+# 2015
+silc.p_IT_15<- tbl(pg, 'c15p') %>% filter(pb020 %in% country) %>%
+  select(pb010, pb020, pb030, pb040, pb150, py010g, py021g, py050g, 
+         py050n,py080g, py090g, py100g, py110g, py120g, py130g, py140g
+         ,px010, px030) %>% 
+  collect(n = Inf)
+# 2016
+silc.p_IT_16<- tbl(pg, 'c16p') %>%filter(pb020 %in% country) %>%
+  select(pb010, pb020, pb030, pb040, pb150, py010g, py021g, py050g, 
+         py050n,py080g, py090g, py100g, py110g, py120g, py130g, py140g
+         ,px010, px030) %>% 
+  collect(n = Inf)
+# 2017
+silc.p_IT_17<- tbl(pg, 'c17p') %>% filter(pb020 %in% country) %>%
+  select(pb010, pb020, pb030, pb040, pb150, py010g, py021g, py050g, 
+         py050n,py080g, py090g, py100g, py110g, py120g, py130g, py140g
+         ,px010, px030) %>% 
+  collect(n = Inf)
+
+########################################
+# Broken Variable py021g: 2007-2013
+########################################
+# 2007
+silc.p_IT_s07<- tbl(pg, 'c07p') %>% 
+  filter(pb020 %in% country) %>% 
+  select(pb010,pb030,py021g)%>%
+  collect(n=Inf)
+# 2008
+silc.p_IT_s08<- tbl(pg, 'c08p') %>% 
+  filter(pb020 %in% country) %>% 
+  select(pb010,pb030,py021g)%>%
+  collect(n=Inf)
+# 2009
+silc.p_IT_s09<- tbl(pg, 'c09p') %>% 
+  filter(pb020 %in% country) %>% 
+  select(pb010,pb030,py021g)%>%
+  collect(n=Inf)
+# 2010
+silc.p_IT_s10<- tbl(pg, 'c10p') %>% 
+  filter(pb020 %in% country) %>% 
+  select(pb010,pb030,py021g)%>%
+  collect(n=Inf)
+# 2011
+silc.p_IT_s11<- tbl(pg, 'c11p') %>% 
+  filter(pb020 %in% country) %>% 
+  select(pb010,pb030,py021g)%>%
+  collect(n=Inf)
+# 2012
+silc.p_IT_s12<- tbl(pg, 'c12p') %>% 
+  filter(pb020 %in% country) %>% 
+  select(pb010,pb030,py021g)%>%
+  collect(n=Inf)
+# 2013
+silc.p_IT_s13<- tbl(pg, 'c13p') %>% 
+  filter(pb020 %in% country) %>% 
+  select(pb010,pb030,py021g)%>%
+  collect(n=Inf)
+
+# Combine the queries 
+silc.p_IT<-bind_rows(silc.p_IT_s07,silc.p_IT_s08,silc.p_IT_s09,silc.p_IT_s10,silc.p_IT_s11,silc.p_IT_s12,silc.p_IT_s13,silc.p_IT_14,silc.p_IT_15,silc.p_IT_16,silc.p_IT_17)
+
+# Merge tables 
+silc.p.all<-full_join(silc.p_IT_b13,silc.p_IT)
+
+##############################################
+# Handling the broken variable 
+##############################################
+
+# generate car variable 
+silc.p.all$car <- silc.p.all$py020g
+silc.p.all$car <- ifelse(silc.p.all$pb010 > 2006, silc.p.all$py021g, silc.p.all$car)
+
+###############################################################
+# 1.2 D-File (Household Register)
+###############################################################
+
+# 2004 - 2013
+silc.d_IT13 <- tbl(pg, 'dd') %>% filter(db020 %in% country & db010 %in% year) %>% 
+  select(db010,db020,db030,db040,db090,db100)%>% 
+  collect(n=Inf)
+# 2014
+silc.d_IT14 <- tbl(pg, 'c14d') %>% filter(db020 %in% country) %>% 
+  select(db010,db020,db030,db040,db090,db100)%>% 
+  collect(n=Inf)
+# 2015
+silc.d_IT15 <- tbl(pg, 'c15d') %>% filter(db020 %in% country) %>% 
+  select(db010,db020,db030,db040,db090,db100)%>% 
+  collect(n=Inf)
+# 2016
+silc.d_IT16 <- tbl(pg, 'c16d') %>% filter(db020 %in% country) %>% 
+  select(db010,db020,db030,db040,db090,db100)%>% 
+  collect(n=Inf)
+# 2017
+silc.d_IT17 <- tbl(pg, 'c17d') %>% filter(db020 %in% country) %>% 
+  select(db010,db020,db030,db040,db090,db100)%>% 
+  collect(n=Inf)
+#
+silc.d_IT<-bind_rows(silc.d_IT14,silc.d_IT15,silc.d_IT16,silc.d_IT17)
+silc.d.all<-full_join(silc.d_IT13,silc.d_IT)
+
+
+##############################################################
+# 1.3 - H-File (Household Data)
+##############################################################
+# 2004 - 2013
+silc.h_IT13<- tbl(pg, 'hh') %>% 
+  filter(hb020 %in% country & hb010 %in% year) %>% 
+  select(hb010,hb020,hb030,hy010,hy020,hy040g,hy050g,hy060g,hy070g
+         ,hy080g,hy090g,hy110g,hy120g,hy130g,hy140g,hx010,hx050)%>%
+  collect(n=Inf)
+# 2014
+silc.h_IT14<- tbl(pg, 'c14h') %>% 
+  filter(hb020 %in% country) %>% 
+  select(hb010,hb020,hb030,hy010,hy020,hy040g,hy050g,hy060g,hy070g
+         ,hy080g,hy090g,hy110g,hy120g,hy130g,hy140g,hx010,hx050)%>%
+  collect(n=Inf)
+# 2015
+silc.h_IT15<- tbl(pg, 'c15h') %>% 
+  filter(hb020 %in% country) %>% 
+  select(hb010,hb020,hb030,hy010,hy020,hy040g,hy050g,hy060g,hy070g 
+         ,hy080g,hy090g,hy110g,hy120g,hy130g,hy140g,hx010,hx050)%>%
+  collect(n=Inf)
+# 2016
+silc.h_IT16<- tbl(pg, 'c16h')  %>% 
+  filter(hb020 %in% country) %>% 
+  select(hb010,hb020,hb030,hy010,hy020,hy040g,hy050g,hy060g,hy070g
+         ,hy080g,hy090g,hy110g,hy120g,hy130g,hy140g,hx010,hx050)%>%
+  collect(n=Inf)
+# 2017
+silc.h_IT17<- tbl(pg, 'c17h') %>% 
+  filter(hb020 %in% country) %>% 
+  select(hb010,hb020,hb030,hy010,hy020,hy040g,hy050g,hy060g,hy070g,hy080g,hy090g
+         ,hy110g,hy120g,hy130g,hy140g,hx010,hx050)%>% 
+  collect(n=Inf)
+
+silc.h_IT<-bind_rows(silc.h_IT14,silc.h_IT15,silc.h_IT16,silc.h_IT17)
+silc.h.all <- full_join(silc.h_IT13,silc.h_IT)
+
+
+# ############################################
+# 1.4 - R-File (Personal Register)
+# ############################################
+
+# Note: This file is special as it is the only file that 
+# includes information on persons under sixteen years of age.
+
+# 2004 - 2013
+silc.r_IT13<- tbl(pg, 'rr') %>% filter(rb020 %in% country & rb010 %in% year)%>%   
+  select(rb010,rb020,rb030,rb050,rb090,rx010,rx030)%>%
+  collect(n=Inf)
+# 2014
+silc.r_IT14<- tbl(pg, 'c14r')  %>% filter(rb020 %in% country)%>%   
+  select(rb010,rb020,rb030,rb050,rb090,rx010,rx030)%>%
+  collect(n=Inf)
+# 2015
+silc.r_IT15<- tbl(pg, 'c15r')  %>% filter(rb020 %in% country)%>%   
+  select(rb010,rb020,rb030,rb050,rb090,rx010,rx030)%>%
+  collect(n=Inf)
+# 2016
+silc.r_IT16<- tbl(pg, 'c16r')  %>% filter(rb020 %in% country)%>%   
+  select(rb010,rb020,rb030,rb050,rb090,rx010,rx030)%>%
+  collect(n=Inf)
+# 2017
+silc.r_IT17<- tbl(pg, 'c17r') %>% filter(rb020 %in% country)%>%   
+  select(rb010,rb020,rb030,rb050,rb090,rx010,rx030)%>%
+  collect(n=Inf)
+
+silc.r_IT<-bind_rows(silc.r_IT14, silc.r_IT15,silc.r_IT16,silc.r_IT17)
+silc.r.all <- full_join(silc.r_IT13,silc.r_IT)
+
+#############################################################
+# Create unique IDs for merging country and household ID
+#############################################################
+
+silc.p<- silc.p.all%>% mutate(id_h=paste0(pb010,px030),
+                              id_p=paste0(pb010,pb030))
+silc.h<- silc.h.all%>% mutate(id_h=paste0(hb010,hb030))
+silc.d<- silc.d.all%>% mutate(id_h=paste0(db010,db030))
+silc.r<- silc.r.all%>% mutate(id_h=paste0(rb010,rx030),
+                              id_p=paste0(rb010,rb030))
+
+#############################################################
+# Merging the datasets
+#############################################################
+
+silc.rp <- left_join(silc.r, silc.p) 
+
+silc.hpr <-  left_join(silc.rp, silc.h, by = c("id_h", "rb010" = "hb010", 
+                                               "rb020" = "hb020", 
+                                               "rx030" = "hb030"))
+
+##########################################################
+# Calculation Part - Grundgesamtheiten
+##########################################################
+
+# Setting them to 0
+silc.hpr[is.na(silc.hpr)] <- 0
+
+# Since some NA's cannot be replaced:
+silc.hpr <- na.omit(silc.hpr)
+
+##################################################################################
+# P1 (Eurostat): Gesamte Bevölkerung & equal sharing of resources within household
+##################################################################################
+# (1) Summe Einkommen aus Arbeit
+silc.hpr <- silc.hpr %>% mutate(inc_p=py010g+py021g+py050g+py080g)
+
+# (2) Summe Haushaltseinkommen
+silc.hpr <- silc.hpr %>% mutate(inc_h=hy040g+hy090g+hy110g)
+
+silc.hpr <- silc.hpr %>% group_by(id_h)%>%mutate(sum_inc_p=sum(inc_p))
+
+# (1)+(2)= Pre-tax factor income
+silc.hpr <- silc.hpr %>% mutate(p1_income =(sum_inc_p+inc_h)/hx050)
+
+#(3) Summe aus Pensionen + Arbeitslosengeld
+silc.hpr <- silc.hpr %>% mutate(othInc1=py090g+py100g)
+silc.hpr <- silc.hpr %>% group_by(id_h)%>%mutate(sum_othInc1=sum(othInc1))
+
+# (1)+(2)+(3)= Pre-tax national income                  
+silc.hpr <- silc.hpr %>% mutate(p11_income =p1_income+(sum_othInc1)/hx050)
+
+# (4) Summe aus anderen Transfers                       
+silc.hpr <- silc.hpr %>% mutate(othInc2_p=py110g+py120g+py130g+py140g)
+silc.hpr <- silc.hpr %>% mutate(othInc2_h=hy050g+hy060g+hy070g+hy080g)
+
+silc.hpr <- silc.hpr %>% group_by(id_h)%>%mutate(sum_othInc2=sum(othInc2_p))
+
+# (5) Summe Taxes
+silc.hpr <- silc.hpr %>% mutate(Taxes=hy120g+hy130g+hy140g)
+
+# (1)+(2)+(3)+(4)-(5)= Post-tax disposable income (hy020)
+silc.hpr <- silc.hpr %>% mutate(p12_income=p11_income+(othInc2_p+othInc2_h-Taxes)/hx050)
+
+# Kontrolle ob hy020 = p12_income
+
+silc.hpr <- silc.hpr %>% mutate(hy020_con=hy020/hx050)
+
+summary(silc.hpr$hy020_con==silc.hpr$p12_income)
+
+
+#########################################################################
+# P2 (wid.world)= Nur Personen >= 20 Jahre & partial sharing of resources
+#########################################################################
+
+# Generating variable 'n': Filtering (age >= 20)
+silc.hpr<- silc.hpr %>% filter(rx010>=20)%>% add_count(id_h)
+
+# Pre-tax factor income 
+silc.hpr <- silc.hpr%>% mutate(p2_income=inc_p+(inc_h)/n)
+
+# Pre-tax national income 
+silc.hpr<- silc.hpr%>% mutate(p21_income=p2_income+othInc1)
+
+# Post-tax disposable income
+silc.hpr<- silc.hpr %>% mutate(p22_income=p21_income+othInc2_p+(othInc2_h-Taxes)/n)
+
+###########################################################################
+# Subsetting [0 >= income] in order to get useful results
+###########################################################################
+
+silc.hpr.p1<-silc.hpr%>% filter(p1_income > 0,p11_income > 0, p12_income > 0)
+
+silc.hpr.p2<- silc.hpr%>% filter(p2_income > 0,p21_income > 0, p22_income > 0,rx010>=20)
+
+###########################################################################
+# Creating Survey Objects
+###########################################################################
+
+P1_svy = svydesign(ids = ~id_h,
+                   weights = ~rb050,
+                   data = silc.hpr.p1) %>% convey_prep()
+
+
+P2_svy = svydesign(ids = ~id_h,
+                   weights = ~rb050,
+                   data = silc.hpr.p2) %>% convey_prep()
+
+
+######################################################################
+# 1. Calculation of the Indicators : P1 (Eurostat)
+######################################################################
+
+# 1.1 Pre-tax factor income ------------------------------------------
+
+# Mittelwert 
+mean_preTaxfactorInc1 <- svymean(~p1_income,P1_svy)
+
+# Median 
+median_preTaxfactorInc1<- svyquantile(~p1_income, P1_svy, quantile=c(0.5))
+
+# Gini-Index 
+gini_preTaxfactorInc1 <- svygini(~p1_income, P1_svy)
+
+# P80/P20 
+P80P20_preTaxfactorInc1 <-svyqsr(~p1_income,P1_svy)
+
+# Top 10% Anteil 
+top10_preTaxfactorInc1 <-svytotal(~p1_income, subset(P1_svy, p1_income >= as.numeric(svyquantile(~p1_income,P1_svy, quantiles=0.9))),na.rm=TRUE)/svytotal(~p1_income,P1_svy,na.rm=TRUE)
+
+
+# 1.2 Pre-tax national income -----------------------------------------
+
+# Mittelwert 
+mean_preTaxnationalInc1 <- svymean(~p11_income,P1_svy)
+
+# Median 
+median_preTaxnationalInc1<- svyquantile(~p11_income,P1_svy, quantiles=c(0.5))
+
+# Gini-Index 
+gini_preTaxnationalInc1 <- svygini(~p11_income, P1_svy)
+
+# P80/P20 
+P80P20_preTaxnationalInc1 <-svyqsr(~p11_income,P1_svy)
+
+# Top 10% Anteil 
+top10_preTaxnationalInc1 <-svytotal(~p11_income, subset(P1_svy, p11_income >= as.numeric(svyquantile(~p11_income,P1_svy, quantiles=0.9))),na.rm=TRUE)/svytotal(~p11_income,P1_svy,na.rm=TRUE)
+
+
+# 1.3 Post-tax disposable income ---------------------------------------
+
+# Mittelwert 
+mean_postTaxInc1 <- svymean(~p12_income,P1_svy)
+
+# Median 
+median_postTaxInc1<-  svyquantile(~p12_income,P1_svy, quantiles=c(0.5))
+
+
+# Gini-Index 
+gini_postTaxInc1 <- svygini(~p12_income, P1_svy)
+
+# P80/P20 
+P80P20_postTaxInc1 <-svyqsr(~p12_income,P1_svy)
+
+# Top 10% Anteil 
+top10_postTaxInc1 <-svytotal(~p12_income, subset(P1_svy, p12_income >= as.numeric(svyquantile(~p12_income,P1_svy, quantiles=0.9))),na.rm=TRUE)/svytotal(~p12_income,P1_svy,na.rm=TRUE)
+
+
+# 1.4. Table: P1 (Eurostat) results -----------------------------------
+
+measures <-c('Mittelwert', 'Median', 'Gini','P80/P20','Top 10% Anteil')
+concept_inc <- c('Pre-tax factor income','Pre-tax national income', 'Post-tax disposable income')
+
+table_P1_results <- data.frame(round(c(mean_preTaxfactorInc1, median_preTaxfactorInc1, gini_preTaxfactorInc1, P80P20_preTaxfactorInc1,top10_preTaxfactorInc1), digits = 4),round(c(mean_preTaxnationalInc1, median_preTaxnationalInc1, gini_preTaxnationalInc1, P80P20_preTaxnationalInc1, top10_preTaxnationalInc1), digits = 4), round(c(mean_postTaxInc1, median_postTaxInc1, gini_postTaxInc1, P80P20_postTaxInc1, top10_postTaxInc1), digits = 4), row.names = measures)
+
+colnames(table_P1_results) <- concept_inc 
+
+View(table_P1_results)
+
+#####################################################################
+# 2. Calculation of the Indicators : P2 (wid.world)
+#####################################################################
+
+# 2.1 Pre-tax factor income -----------------------------------------
+
+# Mittelwert 
+mean_preTaxfactorInc2 <- svymean(~p2_income,P2_svy)
+
+# Median 
+median_preTaxfactorInc2<- svyquantile(~p2_income,P2_svy,quantile=c(0.5))
+
+# Gini-Index 
+gini_preTaxfactorInc2 <- svygini(~p2_income,P2_svy)
+
+# P80/P20 Pre-tax factor income
+P80P20_preTaxfactorInc2 <-svyqsr(~p2_income,P2_svy)
+
+# Top 10% Anteil Pre-tax factor income
+top10_preTaxfactorInc2 <-svytotal(~p2_income,subset(P2_svy, p2_income >= as.numeric(svyquantile(~p2_income,P2_svy, quantiles=0.9))),na.rm=TRUE)/svytotal(~p2_income,P2_svy,na.rm=TRUE)
+                                  
+# 2.2 Pre-tax national income ----------------------------------------
+
+# Mittelwert 
+mean_preTaxnationalInc2 <- svymean(~p21_income, P2_svy)
+
+# Median 
+median_preTaxnationalInc2<- svyquantile(~p21_income,P2_svy,quantile=c(0.5))
+
+# Gini-Index Pre-tax national income
+gini_preTaxnationalInc2 <- svygini(~p21_income, P2_svy)
+
+# P80/P20 Pre-tax national income
+P80P20_preTaxnationalInc2 <-svyqsr(~p21_income,P2_svy)
+
+# Top 10% Anteil Pre-tax national income
+top10_preTaxnationalInc2 <-svytotal(~p21_income, subset(P2_svy, p21_income >= as.numeric(svyquantile(~p21_income,P2_svy, quantiles=0.9))),na.rm=TRUE)/svytotal(~p21_income,P2_svy,na.rm=TRUE)
+
+
+# 2.3 Post-tax disposable income -------------------------------------
+
+# Mittelwert 
+mean_posTaxInc2 <- svymean(~p22_income,P2_svy)
+
+# Median 
+median_posTaxInc2<- svyquantile(~p22_income,P2_svy, quantiles=c(0.5))
+
+# Gini-Index 
+gini_posTaxInc2 <- svygini(~p22_income, P2_svy)
+
+# P80/P20 Post-tax disposable income
+P80P20_posTaxInc2 <-svyqsr(~p22_income,P2_svy)
+
+# Top 10% Anteil Post-tax disposable income
+top10_posTaxInc2<- svytotal(~p22_income, subset(P2_svy, p22_income >= as.numeric(svyquantile(~p22_income,P2_svy, quantiles=0.9))),na.rm=TRUE)/svytotal(~p22_income,P2_svy,na.rm=TRUE)
+
+
+# 2.4. Table: P2 results ----------------------------------------------
+
+measures <-c('Mittelwert', 'Median', 'Gini','P80/P20','Top 10% Anteil')
+concept_inc <- c('Pre-tax factor income','Pre-tax national income', 'Post-tax disposable income')
+
+table_P2_results <- data.frame(round(c(mean_preTaxfactorInc2, median_preTaxfactorInc2, gini_preTaxfactorInc2, P80P20_preTaxfactorInc2,top10_preTaxfactorInc2), digits = 4),round(c(mean_preTaxnationalInc2, median_preTaxnationalInc2, gini_preTaxnationalInc2, P80P20_preTaxnationalInc2, top10_preTaxnationalInc2), digits = 4), round(c(mean_posTaxInc2, median_posTaxInc2, gini_posTaxInc2, P80P20_posTaxInc2, top10_posTaxInc2), digits = 4), row.names = measures)
+
+colnames(table_P2_results) <- concept_inc 
+
+View(table_P2_results)
+
+############################################# END first Coding Part ####################################################
+
+# Aufräumen 
+
+rm(silc.d.all,silc.d_IT,silc.d_IT13,silc.d_IT14,silc.d_IT15,silc.d_IT16,silc.d_IT17,silc.d.all,silc.h_IT,silc.h_IT13,silc.h_IT14,silc.h_IT15,silc.h_IT16,silc.h_IT17,silc.p.all,silc.r_IT,silc.r_IT13,silc.r_IT14,silc.r_IT15,silc.r_IT16,silc.r_IT17,silc.r.all,silc.h.all)
+
+
